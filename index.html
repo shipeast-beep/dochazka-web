@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <title>Docházka App - Přidat a Skener</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    form div { margin-bottom: 10px; }
+    label { display: block; margin-bottom: 5px; }
+    input[type="text"], input[type="date"] { padding: 8px; width: 300px; }
+    button { padding: 10px 15px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+    #qrCodeContainer img { border: 1px solid #ddd; padding: 5px; margin-top: 20px; }
+    #personCard, #scanResult { margin-top: 20px; }
+    #reader { width: 300px; margin-top: 30px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body>
+
+<h1>Docházka App</h1>
+
+<section id="addPersonSection">
+  <h2>Přidat osobu</h2>
+  <form id="personForm">
+    <div>
+      <label for="firstName">Jméno:</label>
+      <input type="text" id="firstName" required />
+    </div>
+    <div>
+      <label for="lastName">Příjmení:</label>
+      <input type="text" id="lastName" required />
+    </div>
+    <div>
+      <label for="birthDate">Datum narození:</label>
+      <input type="date" id="birthDate" required />
+    </div>
+    <button type="submit">Vytvořit kartu</button>
+  </form>
+  <div id="personCard"></div>
+  <div id="qrCodeContainer"></div>
+</section>
+
+<hr />
+
+<section id="scannerSection">
+  <h2>Skenovat docházku</h2>
+  <div id="reader"></div>
+  <div id="scanResult"></div>
+</section>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+  import { getDatabase, ref, set, get, child, push } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCBT1qaXVyrLoeScMNxu6CeVyfdaEXbV2A",
+    authDomain: "dochazka-web.firebaseapp.com",
+    projectId: "dochazka-web",
+    storageBucket: "dochazka-web.firebasestorage.app",
+    messagingSenderId: "451256792807",
+    appId: "1:451256792807:web:e44f20bdedb6b3917dd442",
+    measurementId: "G-B1HTEBEV84",
+    databaseURL: "https://dochazka-web-default-rtdb.europe-west1.firebasedatabase.app"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  // Přidání osoby
+  const form = document.getElementById("personForm");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const firstName = document.getElementById("firstName").value.trim();
+    const lastName = document.getElementById("lastName").value.trim();
+    const birthDate = document.getElementById("birthDate").value;
+    const id = crypto.randomUUID();
+
+    if (!firstName || !lastName || !birthDate) {
+      alert("Vyplň všechna pole.");
+      return;
+    }
+
+    const person = { id, firstName, lastName, birthDate };
+
+    try {
+      await set(ref(db, `people/${id}`), person);
+      displayPersonCard(person);
+      generateQRCode(id);
+      form.reset();
+    } catch (error) {
+      alert("Chyba při ukládání dat.");
+      console.error(error);
+    }
+  });
+
+  function displayPersonCard(data) {
+    const container = document.getElementById("personCard");
+    container.innerHTML = `
+      <h3>${data.firstName} ${data.lastName}</h3>
+      <p>Datum narození: ${data.birthDate}</p>
+      <p>ID: ${data.id}</p>
+    `;
+  }
+
+  function generateQRCode(id) {
+    const container = document.getElementById("qrCodeContainer");
+    container.innerHTML = "";
+    QRCode.toDataURL(id, { width: 200 }, (err, url) => {
+      if (err) {
+        console.error(err);
+        return;
+      }
+      const img = document.createElement("img");
+      img.src = url;
+      container.appendChild(img);
+    });
+  }
+
+  // Scanner
+  const Html5Qrcode = window.Html5Qrcode;
+  const reader = new Html5Qrcode("reader");
+  const scanResult = document.getElementById("scanResult");
+
+  function onScanSuccess(decodedText, decodedResult) {
+    reader.stop().then(() => {
+      processScan(decodedText);
+    }).catch((err) => {
+      console.error("Chyba při zastavení skeneru:", err);
+    });
+  }
+
+  function onScanError(errorMessage) {
+    // ignoruj chyby skenování
+  }
+
+  async function processScan(id) {
+    scanResult.innerHTML = "Načítám data...";
+    try {
+      const snapshot = await get(child(ref(db), `people/${id}`));
+      if (snapshot.exists()) {
+        const person = snapshot.val();
+        scanResult.innerHTML = `
+          <h3>Docházka zaznamenána:</h3>
+          <p>${person.firstName} ${person.lastName}</p>
+          <p>Datum narození: ${person.birthDate}</p>
+          <p>ID: ${person.id}</p>
+          <p>Čas: ${new Date().toLocaleString()}</p>
+        `;
+
+        // Zapiš docházku
+        const attendanceRef = ref(db, `people/${id}/attendance`);
+        const newEntryRef = push(attendanceRef);
+        await set(newEntryRef, { timestamp: Date.now() });
+
+      } else {
+        scanResult.innerHTML = "<p style='color:red'>Osoba nenalezena!</p>";
+      }
+    } catch (e) {
+      console.error(e);
+      scanResult.innerHTML = "<p style='color:red'>Chyba při načítání dat.</p>";
+    } finally {
+      // restartuj skenování po 3 sekundách
+      setTimeout(() => {
+        scanResult.innerHTML = "";
+        reader.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, onScanSuccess, onScanError);
+      }, 3000);
+    }
+  }
+
+  Html5Qrcode.getCameras()
+    .then((cameras) => {
+      if (cameras && cameras.length) {
+        const cameraId = cameras[0].id;
+        reader.start(cameraId, { fps: 10, qrbox: 250 }, onScanSuccess, onScanError);
+      } else {
+        scanResult.innerText = "Žádná kamera nebyla nalezena.";
+      }
+    })
+    .catch((err) => {
+      scanResult.innerText = "Chyba při získávání kamer.";
+      console.error(err);
+    });
+
+</script>
+
+</body>
+</html>
