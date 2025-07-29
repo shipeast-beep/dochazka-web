@@ -1,202 +1,227 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-  <meta charset="UTF-8">
-  <title>Docházka App</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Docházka - generování a skenování QR</title>
   <style>
-    body { font-family: sans-serif; margin: 20px; background: #f5f5f5; color: #333; }
-    h1, h2 { margin-top: 30px; }
-    form div { margin-bottom: 10px; }
-    label { display: block; margin-bottom: 5px; }
-    input[type="text"], input[type="date"], select {
-      padding: 8px; width: 300px; max-width: 100%;
-    }
-    button {
-      padding: 10px 15px; margin-top: 10px;
-      background-color: #4CAF50; color: white; border: none; cursor: pointer;
-    }
-    button:disabled { background-color: #ccc; }
-    #qrCodeContainer img {
-      border: 1px solid #ddd; padding: 5px; margin-top: 20px;
-    }
-    #reader { width: 300px; max-width: 100%; margin-top: 20px; }
-    #personCard, #scanResult { margin-top: 20px; }
-    #startScanBtn, #stopScanBtn { margin: 5px; }
+    body { font-family: sans-serif; margin: 20px; max-width: 400px; }
+    label, button { display: block; margin-top: 10px; width: 100%; }
+    input, select { padding: 8px; width: 100%; box-sizing: border-box; }
+    #personalCard, #scanResult { margin-top: 20px; border: 1px solid #aaa; padding: 15px; display: none; }
+    #qrCode { margin-top: 10px; }
+    video { width: 100%; border: 1px solid #ccc; margin-top: 10px; display: none; }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 </head>
 <body>
 
-<h1>Docházka App</h1>
+  <h1>Vytvoř osobní kartu</h1>
 
-<!-- Sekce: Přidání osoby -->
-<section>
-  <h2>Přidat osobu</h2>
   <form id="personForm">
-    <div>
-      <label for="firstName">Jméno:</label>
-      <input type="text" id="firstName" required>
-    </div>
-    <div>
-      <label for="lastName">Příjmení:</label>
-      <input type="text" id="lastName" required>
-    </div>
-    <div>
-      <label for="birthDate">Datum narození:</label>
-      <input type="date" id="birthDate" required>
-    </div>
-    <button type="submit">Vytvořit kartu</button>
+    <label for="firstName">Jméno</label>
+    <input type="text" id="firstName" required />
+
+    <label for="lastName">Příjmení</label>
+    <input type="text" id="lastName" required />
+
+    <label for="dob">Datum narození</label>
+    <input type="date" id="dob" required />
+
+    <label for="event">Událost</label>
+    <select id="event" required>
+      <option value="" disabled selected>Vyber událost</option>
+      <option value="pracovni_dochazka">Pracovní docházka</option>
+      <option value="kurz">Kurz</option>
+      <option value="schuze">Schůze</option>
+    </select>
+
+    <button type="submit">Vytvořit kartu a QR</button>
   </form>
-  <div id="personCard"></div>
-  <div id="qrCodeContainer"></div>
-</section>
 
-<hr>
+  <div id="personalCard">
+    <h2>Personal Card</h2>
+    <div><strong>Jméno:</strong> <span id="cardFirstName"></span></div>
+    <div><strong>Příjmení:</strong> <span id="cardLastName"></span></div>
+    <div><strong>Datum narození:</strong> <span id="cardDob"></span></div>
+    <div><strong>Událost:</strong> <span id="cardEvent"></span></div>
+    <div id="qrCode"></div>
+  </div>
 
-<!-- Sekce: Skener docházky -->
-<section>
-  <h2>Skener docházky</h2>
+  <hr />
 
-  <label for="eventSelect">Zvol událost:</label>
-  <select id="eventSelect">
-    <option value="Příchod">Příchod</option>
-    <option value="Odchod">Odchod</option>
-    <option value="Oběd">Oběd</option>
-    <option value="Přestávka">Přestávka</option>
-  </select>
+  <button id="startScan">Spustit skenování QR</button>
+  <button id="stopScan" style="display:none;">Zastavit skenování</button>
+  <video id="video" playsinline></video>
 
-  <br><br>
-  <button id="startScanBtn">📷 Spustit skenování</button>
-  <button id="stopScanBtn" style="display:none;">🛑 Zastavit skenování</button>
-  <div id="reader" style="display:none;"></div>
   <div id="scanResult"></div>
-</section>
 
-<!-- Firebase + hlavní skript -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
-  import { getDatabase, ref, set, get, child, push } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
-  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js"></script>
 
-  // Firebase konfigurace
-  const firebaseConfig = {
-    apiKey: "AIzaSyCBT1qaXVyrLoeScMNxu6CeVyfdaEXbV2A",
-    authDomain: "dochazka-web.firebaseapp.com",
-    projectId: "dochazka-web",
-    storageBucket: "dochazka-web.firebasestorage.app",
-    messagingSenderId: "451256792807",
-    appId: "1:451256792807:web:e44f20bdedb6b3917dd442",
-    measurementId: "G-B1HTEBEV84",
-    databaseURL: "https://dochazka-web-default-rtdb.europe-west1.firebasedatabase.app"
-  };
+  <!-- QRCode.js -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
 
-  // Inicializace Firebase
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
-  const auth = getAuth();
-  await signInAnonymously(auth);
+  <!-- jsQR (pro čtení QR z videa) -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
-  // Přidání osoby
-  const form = document.getElementById("personForm");
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const firstName = document.getElementById("firstName").value.trim();
-    const lastName = document.getElementById("lastName").value.trim();
-    const birthDate = document.getElementById("birthDate").value;
-    const id = crypto.randomUUID();
-    const person = { id, firstName, lastName, birthDate };
-    await set(ref(db, `people/${id}`), person);
-    displayPersonCard(person);
-    generateQRCode(id);
-    form.reset();
-  });
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCBT1qaXVyrLoeScMNxu6CeVyfdaEXbV2A",
+      authDomain: "dochazka-web.firebaseapp.com",
+      databaseURL: "https://dochazka-web-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "dochazka-web",
+      storageBucket: "dochazka-web.appspot.com",
+      messagingSenderId: "451256792807",
+      appId: "1:451256792807:web:e44f20bdedb6b3917dd442",
+      measurementId: "G-B1HTEBEV84"
+    };
 
-  function displayPersonCard(data) {
-    const container = document.getElementById("personCard");
-    container.innerHTML = `
-      <h3>${data.firstName} ${data.lastName}</h3>
-      <p>Datum narození: ${data.birthDate}</p>
-      <p>ID: ${data.id}</p>
-    `;
-  }
+    const app = firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
 
-  function generateQRCode(id) {
-    const container = document.getElementById("qrCodeContainer");
-    container.innerHTML = "";
-    QRCode.toDataURL(id, { width: 200 }, (err, url) => {
-      if (err) return console.error(err);
-      const img = document.createElement("img");
-      img.src = url;
-      container.appendChild(img);
-    });
-  }
+    // --- Vytvoření karty + QR ---
+    const form = document.getElementById('personForm');
+    const card = document.getElementById('personalCard');
+    const qrCodeContainer = document.getElementById('qrCode');
 
-  // Skenování
-  const reader = new Html5Qrcode("reader");
-  const startScanBtn = document.getElementById("startScanBtn");
-  const stopScanBtn = document.getElementById("stopScanBtn");
-  const scanResult = document.getElementById("scanResult");
-  const readerElem = document.getElementById("reader");
-  const eventSelect = document.getElementById("eventSelect");
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
 
-  let isScanning = false;
-  let currentCamera = null;
+      const firstName = form.firstName.value.trim();
+      const lastName = form.lastName.value.trim();
+      const dob = form.dob.value;
+      const event = form.event.value;
 
-  startScanBtn.addEventListener("click", async () => {
-    if (isScanning) return;
-    const cameras = await Html5Qrcode.getCameras();
-    const backCam = cameras.find(cam => cam.label.toLowerCase().includes("back")) || cameras[0];
-    currentCamera = backCam.id;
-    await reader.start(currentCamera, { fps: 10, qrbox: 250 }, onScanSuccess, () => {});
-    readerElem.style.display = "block";
-    stopScanBtn.style.display = "inline-block";
-    startScanBtn.style.display = "none";
-    isScanning = true;
-  });
-
-  stopScanBtn.addEventListener("click", async () => {
-    if (!isScanning) return;
-    await reader.stop();
-    readerElem.style.display = "none";
-    stopScanBtn.style.display = "none";
-    startScanBtn.style.display = "inline-block";
-    scanResult.innerHTML = "";
-    isScanning = false;
-  });
-
-  async function onScanSuccess(decodedText) {
-    if (!isScanning) return;
-    await reader.stop(); // zastav sken hned
-    isScanning = false;
-    readerElem.style.display = "none";
-    stopScanBtn.style.display = "none";
-    startScanBtn.style.display = "inline-block";
-
-    try {
-      const snapshot = await get(child(ref(db), `people/${decodedText}`));
-      if (!snapshot.exists()) {
-        scanResult.innerHTML = "<p style='color:red'>Osoba nenalezena.</p>";
+      if (!firstName || !lastName || !dob || !event) {
+        alert('Vyplňte všechny údaje');
         return;
       }
-      const person = snapshot.val();
-      const timestamp = Date.now();
-      const event = eventSelect.value;
-      await push(ref(db, `people/${decodedText}/attendance`), { timestamp, event });
 
-      scanResult.innerHTML = `
-        <h3>✅ Zaznamenáno</h3>
-        <p><strong>${person.firstName} ${person.lastName}</strong></p>
-        <p>Událost: <strong>${event}</strong></p>
-        <p>Čas: ${new Date(timestamp).toLocaleString()}</p>
-      `;
-    } catch (e) {
-      console.error(e);
-      scanResult.innerHTML = "<p style='color:red'>Chyba při načítání nebo zápisu.</p>";
+      const id = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
+
+      const data = { firstName, lastName, dob, event, id };
+
+      try {
+        await database.ref('persons/' + id).set(data);
+
+        document.getElementById('cardFirstName').textContent = firstName;
+        document.getElementById('cardLastName').textContent = lastName;
+        document.getElementById('cardDob').textContent = dob;
+        document.getElementById('cardEvent').textContent = event;
+
+        qrCodeContainer.innerHTML = '';
+        QRCode.toCanvas(id, { width: 150 }, (error, canvas) => {
+          if (error) {
+            alert('Chyba při generování QR kódu');
+            return;
+          }
+          qrCodeContainer.appendChild(canvas);
+          card.style.display = 'block';
+        });
+
+      } catch (err) {
+        alert('Chyba při ukládání do databáze');
+        console.error(err);
+      }
+    });
+
+    // --- Skener QR ---
+    const video = document.getElementById('video');
+    const startScanBtn = document.getElementById('startScan');
+    const stopScanBtn = document.getElementById('stopScan');
+    const scanResult = document.getElementById('scanResult');
+
+    let scanning = false;
+    let videoStream = null;
+    let scanAnimationFrame;
+
+    function tick() {
+      if (!scanning) return;
+
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+
+      const code = jsQR(imageData.data, canvas.width, canvas.height);
+
+      if (code) {
+        scanning = false;
+        stopVideo();
+
+        // Načti data z Firebase podle ID v QR
+        database.ref('persons/' + code.data).get().then(snapshot => {
+          if (snapshot.exists()) {
+            const person = snapshot.val();
+            scanResult.innerHTML =
+              `<h3>Docházka načtena</h3>
+               <div><strong>Jméno:</strong> ${person.firstName}</div>
+               <div><strong>Příjmení:</strong> ${person.lastName}</div>
+               <div><strong>Datum narození:</strong> ${person.dob}</div>
+               <div><strong>Událost:</strong> ${person.event}</div>
+               <div><strong>ID:</strong> ${person.id}</div>`;
+          } else {
+            scanResult.textContent = 'Osoba nenalezena v databázi.';
+          }
+        }).catch(err => {
+          scanResult.textContent = 'Chyba při načítání dat.';
+          console.error(err);
+        });
+
+        startScanBtn.style.display = 'inline-block';
+        stopScanBtn.style.display = 'none';
+        video.style.display = 'none';
+
+      } else {
+        scanAnimationFrame = requestAnimationFrame(tick);
+      }
     }
-  }
-</script>
 
+    function startVideo() {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(stream => {
+          videoStream = stream;
+          video.srcObject = stream;
+          video.setAttribute('playsinline', true);
+          video.play();
+          video.style.display = 'block';
+          scanning = true;
+          scanResult.textContent = '';
+          tick();
+        })
+        .catch(err => {
+          alert('Nelze spustit kameru: ' + err.message);
+          startScanBtn.style.display = 'inline-block';
+          stopScanBtn.style.display = 'none';
+        });
+    }
+
+    function stopVideo() {
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+      }
+      video.style.display = 'none';
+      scanning = false;
+      if (scanAnimationFrame) cancelAnimationFrame(scanAnimationFrame);
+    }
+
+    startScanBtn.onclick = () => {
+      startScanBtn.style.display = 'none';
+      stopScanBtn.style.display = 'inline-block';
+      scanResult.textContent = '';
+      startVideo();
+    };
+
+    stopScanBtn.onclick = () => {
+      stopVideo();
+      startScanBtn.style.display = 'inline-block';
+      stopScanBtn.style.display = 'none';
+      scanResult.textContent = '';
+    };
+  </script>
 </body>
 </html>
