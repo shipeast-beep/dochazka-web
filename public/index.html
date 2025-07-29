@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Attendance Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 QR Attendance Tracker</h1>
+            <p>Generate QR codes with personal data and scan for event attendance</p>
+        </header>
+
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="generate">Generate QR</button>
+            <button class="tab-btn" data-tab="scan">Scan QR</button>
+            <button class="tab-btn" data-tab="records">Records</button>
+        </nav>
+
+        <!-- QR Code Generation Tab -->
+        <div id="generate-tab" class="tab-content active">
+            <div class="card">
+                <h2>📝 Generate QR Code</h2>
+                <form id="qr-form">
+                    <div class="form-group">
+                        <label for="firstName">First Name</label>
+                        <input type="text" id="firstName" name="firstName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="lastName">Last Name</label>
+                        <input type="text" id="lastName" name="lastName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="birthDate">Birth Date</label>
+                        <input type="date" id="birthDate" name="birthDate" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Generate QR Code</button>
+                </form>
+                
+                <div id="qr-result" class="qr-result hidden">
+                    <h3>Your QR Code</h3>
+                    <div class="qr-container">
+                        <img id="qr-image" alt="Generated QR Code">
+                    </div>
+                    <div class="personal-info">
+                        <p><strong>Name:</strong> <span id="display-name"></span></p>
+                        <p><strong>Birth Date:</strong> <span id="display-birthdate"></span></p>
+                    </div>
+                    <button class="btn btn-secondary" onclick="downloadQR()">Download QR Code</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- QR Code Scanning Tab -->
+        <div id="scan-tab" class="tab-content">
+            <div class="card">
+                <h2>📱 Scan QR Code</h2>
+                <div class="scanner-container">
+                    <video id="video" autoplay muted playsinline></video>
+                    <canvas id="canvas" hidden></canvas>
+                    <div id="scanner-overlay">
+                        <div class="scanner-frame"></div>
+                        <p>Position QR code within the frame</p>
+                    </div>
+                </div>
+                
+                <div class="scanner-controls">
+                    <button id="start-scan" class="btn btn-primary">Start Scanning</button>
+                    <button id="stop-scan" class="btn btn-secondary" disabled>Stop Scanning</button>
+                </div>
+
+                <div id="scan-status" class="status-message"></div>
+            </div>
+
+            <!-- Event Selection Modal -->
+            <div id="event-modal" class="modal hidden">
+                <div class="modal-content">
+                    <h3>Select Event</h3>
+                    <p>Choose the event you're attending:</p>
+                    <div id="scanned-person-info" class="person-info"></div>
+                    <form id="event-form">
+                        <div class="form-group">
+                            <label for="event-select">Event</label>
+                            <select id="event-select" name="eventId" required>
+                                <option value="">Choose an event...</option>
+                            </select>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-secondary" onclick="closeEventModal()">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Confirm Attendance</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Confirmation Modal -->
+            <div id="confirmation-modal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="success-icon">✅</div>
+                    <h3>Attendance Confirmed!</h3>
+                    <div id="confirmation-details" class="confirmation-details"></div>
+                    <button class="btn btn-primary" onclick="closeConfirmationModal()">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Records Tab -->
+        <div id="records-tab" class="tab-content">
+            <div class="card">
+                <h2>📊 Attendance Records</h2>
+                <button class="btn btn-secondary" onclick="loadAttendanceRecords()">Refresh Records</button>
+                <div id="records-container">
+                    <div class="loading">Loading records...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
