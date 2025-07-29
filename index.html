@@ -1,17 +1,28 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-  <meta charset="UTF-8" />
-  <title>Docházka App - Přidat a Skener</title>
+  <meta charset="UTF-8">
+  <title>Docházka App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: sans-serif; margin: 20px; }
+    body { font-family: sans-serif; margin: 20px; background: #f5f5f5; color: #333; }
+    h1, h2 { margin-top: 30px; }
     form div { margin-bottom: 10px; }
     label { display: block; margin-bottom: 5px; }
-    input[type="text"], input[type="date"] { padding: 8px; width: 300px; }
-    button { padding: 10px 15px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
-    #qrCodeContainer img { border: 1px solid #ddd; padding: 5px; margin-top: 20px; }
+    input[type="text"], input[type="date"], select {
+      padding: 8px; width: 300px; max-width: 100%;
+    }
+    button {
+      padding: 10px 15px; margin-top: 10px;
+      background-color: #4CAF50; color: white; border: none; cursor: pointer;
+    }
+    button:disabled { background-color: #ccc; }
+    #qrCodeContainer img {
+      border: 1px solid #ddd; padding: 5px; margin-top: 20px;
+    }
+    #reader { width: 300px; max-width: 100%; margin-top: 20px; }
     #personCard, #scanResult { margin-top: 20px; }
-    #reader { width: 300px; margin-top: 30px; }
+    #startScanBtn, #stopScanBtn { margin: 5px; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
@@ -20,20 +31,21 @@
 
 <h1>Docházka App</h1>
 
-<section id="addPersonSection">
+<!-- Sekce: Přidání osoby -->
+<section>
   <h2>Přidat osobu</h2>
   <form id="personForm">
     <div>
       <label for="firstName">Jméno:</label>
-      <input type="text" id="firstName" required />
+      <input type="text" id="firstName" required>
     </div>
     <div>
       <label for="lastName">Příjmení:</label>
-      <input type="text" id="lastName" required />
+      <input type="text" id="lastName" required>
     </div>
     <div>
       <label for="birthDate">Datum narození:</label>
-      <input type="date" id="birthDate" required />
+      <input type="date" id="birthDate" required>
     </div>
     <button type="submit">Vytvořit kartu</button>
   </form>
@@ -41,18 +53,34 @@
   <div id="qrCodeContainer"></div>
 </section>
 
-<hr />
+<hr>
 
-<section id="scannerSection">
-  <h2>Skenovat docházku</h2>
-  <div id="reader"></div>
+<!-- Sekce: Skener docházky -->
+<section>
+  <h2>Skener docházky</h2>
+
+  <label for="eventSelect">Zvol událost:</label>
+  <select id="eventSelect">
+    <option value="Příchod">Příchod</option>
+    <option value="Odchod">Odchod</option>
+    <option value="Oběd">Oběd</option>
+    <option value="Přestávka">Přestávka</option>
+  </select>
+
+  <br><br>
+  <button id="startScanBtn">📷 Spustit skenování</button>
+  <button id="stopScanBtn" style="display:none;">🛑 Zastavit skenování</button>
+  <div id="reader" style="display:none;"></div>
   <div id="scanResult"></div>
 </section>
 
+<!-- Firebase + hlavní skript -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
   import { getDatabase, ref, set, get, child, push } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
 
+  // Firebase konfigurace
   const firebaseConfig = {
     apiKey: "AIzaSyCBT1qaXVyrLoeScMNxu6CeVyfdaEXbV2A",
     authDomain: "dochazka-web.firebaseapp.com",
@@ -64,35 +92,25 @@
     databaseURL: "https://dochazka-web-default-rtdb.europe-west1.firebasedatabase.app"
   };
 
+  // Inicializace Firebase
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
+  const auth = getAuth();
+  await signInAnonymously(auth);
 
   // Přidání osoby
   const form = document.getElementById("personForm");
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-
     const firstName = document.getElementById("firstName").value.trim();
     const lastName = document.getElementById("lastName").value.trim();
     const birthDate = document.getElementById("birthDate").value;
     const id = crypto.randomUUID();
-
-    if (!firstName || !lastName || !birthDate) {
-      alert("Vyplň všechna pole.");
-      return;
-    }
-
     const person = { id, firstName, lastName, birthDate };
-
-    try {
-      await set(ref(db, `people/${id}`), person);
-      displayPersonCard(person);
-      generateQRCode(id);
-      form.reset();
-    } catch (error) {
-      alert("Chyba při ukládání dat.");
-      console.error(error);
-    }
+    await set(ref(db, `people/${id}`), person);
+    displayPersonCard(person);
+    generateQRCode(id);
+    form.reset();
   });
 
   function displayPersonCard(data) {
@@ -108,81 +126,76 @@
     const container = document.getElementById("qrCodeContainer");
     container.innerHTML = "";
     QRCode.toDataURL(id, { width: 200 }, (err, url) => {
-      if (err) {
-        console.error(err);
-        return;
-      }
+      if (err) return console.error(err);
       const img = document.createElement("img");
       img.src = url;
       container.appendChild(img);
     });
   }
 
-  // Scanner
-  const Html5Qrcode = window.Html5Qrcode;
+  // Skenování
   const reader = new Html5Qrcode("reader");
+  const startScanBtn = document.getElementById("startScanBtn");
+  const stopScanBtn = document.getElementById("stopScanBtn");
   const scanResult = document.getElementById("scanResult");
+  const readerElem = document.getElementById("reader");
+  const eventSelect = document.getElementById("eventSelect");
 
-  function onScanSuccess(decodedText, decodedResult) {
-    reader.stop().then(() => {
-      processScan(decodedText);
-    }).catch((err) => {
-      console.error("Chyba při zastavení skeneru:", err);
-    });
-  }
+  let isScanning = false;
+  let currentCamera = null;
 
-  function onScanError(errorMessage) {
-    // ignoruj chyby skenování
-  }
+  startScanBtn.addEventListener("click", async () => {
+    if (isScanning) return;
+    const cameras = await Html5Qrcode.getCameras();
+    const backCam = cameras.find(cam => cam.label.toLowerCase().includes("back")) || cameras[0];
+    currentCamera = backCam.id;
+    await reader.start(currentCamera, { fps: 10, qrbox: 250 }, onScanSuccess, () => {});
+    readerElem.style.display = "block";
+    stopScanBtn.style.display = "inline-block";
+    startScanBtn.style.display = "none";
+    isScanning = true;
+  });
 
-  async function processScan(id) {
-    scanResult.innerHTML = "Načítám data...";
+  stopScanBtn.addEventListener("click", async () => {
+    if (!isScanning) return;
+    await reader.stop();
+    readerElem.style.display = "none";
+    stopScanBtn.style.display = "none";
+    startScanBtn.style.display = "inline-block";
+    scanResult.innerHTML = "";
+    isScanning = false;
+  });
+
+  async function onScanSuccess(decodedText) {
+    if (!isScanning) return;
+    await reader.stop(); // zastav sken hned
+    isScanning = false;
+    readerElem.style.display = "none";
+    stopScanBtn.style.display = "none";
+    startScanBtn.style.display = "inline-block";
+
     try {
-      const snapshot = await get(child(ref(db), `people/${id}`));
-      if (snapshot.exists()) {
-        const person = snapshot.val();
-        scanResult.innerHTML = `
-          <h3>Docházka zaznamenána:</h3>
-          <p>${person.firstName} ${person.lastName}</p>
-          <p>Datum narození: ${person.birthDate}</p>
-          <p>ID: ${person.id}</p>
-          <p>Čas: ${new Date().toLocaleString()}</p>
-        `;
-
-        // Zapiš docházku
-        const attendanceRef = ref(db, `people/${id}/attendance`);
-        const newEntryRef = push(attendanceRef);
-        await set(newEntryRef, { timestamp: Date.now() });
-
-      } else {
-        scanResult.innerHTML = "<p style='color:red'>Osoba nenalezena!</p>";
+      const snapshot = await get(child(ref(db), `people/${decodedText}`));
+      if (!snapshot.exists()) {
+        scanResult.innerHTML = "<p style='color:red'>Osoba nenalezena.</p>";
+        return;
       }
+      const person = snapshot.val();
+      const timestamp = Date.now();
+      const event = eventSelect.value;
+      await push(ref(db, `people/${decodedText}/attendance`), { timestamp, event });
+
+      scanResult.innerHTML = `
+        <h3>✅ Zaznamenáno</h3>
+        <p><strong>${person.firstName} ${person.lastName}</strong></p>
+        <p>Událost: <strong>${event}</strong></p>
+        <p>Čas: ${new Date(timestamp).toLocaleString()}</p>
+      `;
     } catch (e) {
       console.error(e);
-      scanResult.innerHTML = "<p style='color:red'>Chyba při načítání dat.</p>";
-    } finally {
-      // restartuj skenování po 3 sekundách
-      setTimeout(() => {
-        scanResult.innerHTML = "";
-        reader.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, onScanSuccess, onScanError);
-      }, 3000);
+      scanResult.innerHTML = "<p style='color:red'>Chyba při načítání nebo zápisu.</p>";
     }
   }
-
-  Html5Qrcode.getCameras()
-    .then((cameras) => {
-      if (cameras && cameras.length) {
-        const cameraId = cameras[0].id;
-        reader.start(cameraId, { fps: 10, qrbox: 250 }, onScanSuccess, onScanError);
-      } else {
-        scanResult.innerText = "Žádná kamera nebyla nalezena.";
-      }
-    })
-    .catch((err) => {
-      scanResult.innerText = "Chyba při získávání kamer.";
-      console.error(err);
-    });
-
 </script>
 
 </body>
